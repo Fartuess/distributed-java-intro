@@ -22,7 +22,7 @@ public class Main {
         }
         catch (InterruptedException exc)
         {
-            
+
         }
         System.out.println("FINISHED");
     }
