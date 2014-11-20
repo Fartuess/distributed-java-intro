@@ -16,10 +16,9 @@ public class SayMain {
         Session session = connection.createSession(false, Session.AUTO_ACKNOWLEDGE);
         Destination queue = session.createQueue("SayHelloQueue");
         MessageProducer producer = session.createProducer(queue);
-
         producer.setDeliveryMode(DeliveryMode.NON_PERSISTENT);
-
         connection.start();
+
         BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(System.in));
         String in = "";
         while (!in.equalsIgnoreCase(EXIT)) {
