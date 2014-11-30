@@ -1,29 +1,25 @@
 package AdamBeczynski;
 
-import com.sun.jmx.remote.internal.ArrayQueue;
-
 import java.util.ArrayList;
-import java.util.PriorityQueue;
-import java.util.Queue;
 import java.util.Random;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Created by CLEVO on 2014-11-10.
+ *
+ * Chairman runnable.
  */
-
-
 public class Chairman implements Runnable {
-    //public PriorityQueue<Item> itemQueue = new PriorityQueue<Item>();
     public volatile ArrayBlockingQueue<Item> itemQueue = new ArrayBlockingQueue<Item>(10);
     private volatile ArrayList<Recipient> currentAuctionRecipients = new ArrayList<Recipient>();
 
-    //private final ReentrantLock auctionInProcessLock = new ReentrantLock();
-    private volatile boolean isAuctionInProcess = false;
+    private volatile AtomicBoolean isAuctionInProcess = new AtomicBoolean(false);
     private final ReentrantLock itemLock = new ReentrantLock();
-    private final ReentrantLock recipentLock = new ReentrantLock();
+    private final ReentrantLock recipientLock = new ReentrantLock();
 
+    //Status describing state of success of item registration.
     public enum ItemRegistrationStatus
     {
         NO_AUCTION_IN_PROGRESS,
@@ -32,34 +28,37 @@ public class Chairman implements Runnable {
         OTHER_FAILURE
     }
 
+    //Status describing state of success of recipient registration.
     public enum RecipientAuctionRegistrationStatus
     {
         NO_AUCTION_IN_PROGRESS,
+        LIST_FULL,
         SUCCESS,
         OTHER_FAILURE
     }
 
+    //Method for adding item to auction queue.
     public synchronized ItemRegistrationStatus addItem(Item item)  //is synchronized needed?
     {
-        if(!AuctionHouse.marketManager.isMarketOpened)
-        {
-            //System.out.println("Auctions haven't started, stop throwing items at me plox!");
-            return ItemRegistrationStatus.NO_AUCTION_IN_PROGRESS;
+        //If market is not opened it is not possible to register item.
+        synchronized (AuctionHouse.marketManager.auctionHouseState) {
+            if (AuctionHouse.marketManager.auctionHouseState != MarketManager.AuctionHouseState.OPENED) {
+                return ItemRegistrationStatus.NO_AUCTION_IN_PROGRESS;
+            }
         }
+
+        //Trying to add item to queue.
         ItemRegistrationStatus isSuccess = ItemRegistrationStatus.OTHER_FAILURE;
-        //if(itemLock.isLocked()) System.out.println("Ima locked Man");
         itemLock.lock();
         try {
             if (itemQueue.size() >= 10)
             {
-                //System.out.println("Queueueueue full!");
-                isSuccess = ItemRegistrationStatus.QUEUE_FULL;
+                isSuccess = ItemRegistrationStatus.QUEUE_FULL;  //Item registration failed - queue full.
             }
             else
             {
-                itemQueue.add(item);
-                isSuccess = ItemRegistrationStatus.SUCCESS;
-                //System.out.println("Item Successfully Added!");
+                itemQueue.add(item);    //No synchronization needed as it is blocking queue.
+                isSuccess = ItemRegistrationStatus.SUCCESS; //Item added successfully.
             }
         }
         finally {
@@ -67,71 +66,83 @@ public class Chairman implements Runnable {
             return isSuccess;
         }
     }
+
+    //Method for registering recipients for current auction.
     public synchronized RecipientAuctionRegistrationStatus registerRecipient(Recipient recipient) //is synchronized needed?
     {
-        if(!isAuctionInProcess) return RecipientAuctionRegistrationStatus.NO_AUCTION_IN_PROGRESS; //no auctions already in process? Sorry buddy!
+        if(!isAuctionInProcess.get()) return RecipientAuctionRegistrationStatus.NO_AUCTION_IN_PROGRESS; //Currently there are no auction i progress.
 
+        synchronized (currentAuctionRecipients) {
+            if (currentAuctionRecipients.size() >= 10)  return RecipientAuctionRegistrationStatus.LIST_FULL;    //List for current auction recipients is full. No more can be registered
+        }
+
+        //Trying to register recipient for current auction.
         RecipientAuctionRegistrationStatus isSuccess = RecipientAuctionRegistrationStatus.OTHER_FAILURE;
-        recipentLock.lock();
+        recipientLock.lock();
         try {
-            currentAuctionRecipients.add(recipient);
-            recipient.isRegistedToCurrentAuction = true;
+            synchronized (currentAuctionRecipients) {
+                currentAuctionRecipients.add(recipient);
+            }
             System.out.println("Registering " + recipient.name);
             isSuccess = RecipientAuctionRegistrationStatus.SUCCESS;
         }
         finally {
-            recipentLock.unlock();
+            recipientLock.unlock();
             return isSuccess;
         }
     }
 
-    public void StartAuction()  {
-        recipentLock.lock();
+    //Starting new auction.
+    private void StartAuction()  {
+
+        //Start auction.
+        isAuctionInProcess.set(true);
+
+        //Wait 5 seconds
         try {
-            currentAuctionRecipients.clear();
-            isAuctionInProcess = true;
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        //Choose winner if there are any registered recipients.
+        Item item;
+        itemLock.lock();
+        try
+        {
+            item = itemQueue.poll();
+            Recipient winner = chooseWinner();
+            if(winner == null)
+            {
+                System.out.println("There is no winner for " + item.name);
+            }
+            else {
+                winner.AddOwnedItem(item);
+                System.out.println("Winner for auction " + item.name + " is " + winner.name);
+            }
+            isAuctionInProcess.set(false);
         }
         finally {
-            recipentLock.unlock();
-            try {
-                Thread.sleep(5000);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            Item item;
-            itemLock.lock();
-            try
-            {
-                item = itemQueue.poll();
-                Recipient winner = chooseWinner();
-                if(winner == null)
-                {
-                    System.out.println("There is no winner for " + item.name);
-                }
-                else {
-                    winner.AddOwnedItem(item);
-                    System.out.println("Winner for auction " + item.name + " is " + winner.name);
-                }
-                isAuctionInProcess = false;
-            }
-            finally {
-                itemLock.unlock();
-            }
+            itemLock.unlock();
         }
     }
 
+    //Choose winner of current auction.
     private Recipient chooseWinner()
     {
         Recipient winner;
         Random random = new Random();
-        recipentLock.lock();
+        recipientLock.lock();
         try {
             if(currentAuctionRecipients.isEmpty())
             {
                 winner = null;
             }
             else {
+                //Choose random winner from currently registered recipients.
                 winner = currentAuctionRecipients.get(random.nextInt(currentAuctionRecipients.size()));
+
+                //Waking up all recipients who felt asleep after successful registration.
                 Recipient[] recipientArray = {};
                 recipientArray = currentAuctionRecipients.toArray(recipientArray);
                 for (int i = 0; i < currentAuctionRecipients.size(); i++) {
@@ -139,23 +150,31 @@ public class Chairman implements Runnable {
                         recipientArray[i].notify();
                     }
                 }
-                currentAuctionRecipients.clear();
+
+                //Clearing list of registered recipients.
+                synchronized (currentAuctionRecipients) {
+                    currentAuctionRecipients.clear();
+                }
             }
         }
         finally {
-            recipentLock.unlock();
+            recipientLock.unlock();
         }
         return winner;
     }
 
+    //Entrance point for chairman thread.
     @Override
     public void run() {
-        //System.out.println("Chairman have Arrived!");
+
+        //Waits for auction house to open.
         try {
             synchronized (this) {
                 wait();
             }
         } catch (InterruptedException e) {}
+
+        //Keep starting new auctions until there will be empty queue for more than 5 seconds.
         do {
             while (!itemQueue.isEmpty()) {
                 StartAuction();
@@ -166,10 +185,14 @@ public class Chairman implements Runnable {
                 e.printStackTrace();
             }
         } while(!itemQueue.isEmpty());
+
+        //Notify market manager to close the market.
         System.out.println("No auctions within 5 seconds. Closing the market");
         synchronized (AuctionHouse.marketManager) {
             AuctionHouse.marketManager.notify();
         }
+
+        //Wait for notification from market manager.
         try {
             synchronized (this) {
                 wait();

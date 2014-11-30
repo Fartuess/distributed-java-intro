@@ -1,13 +1,13 @@
 package AdamBeczynski;
 
-import java.util.Dictionary;
 import java.util.HashMap;
 
 /**
  * Created by CLEVO on 2014-11-10.
+ *
+ * Class created to make project environment simpler and not using singletons. Potentially this class could be turn
+ * into singleton and keep non-static non-singleton variables for market manager and chairman.
  */
-
-//Class created to make project environment simpler
 public class AuctionHouse {
     public static volatile MarketManager marketManager = new MarketManager();
     public static volatile Chairman chairman = new Chairman();

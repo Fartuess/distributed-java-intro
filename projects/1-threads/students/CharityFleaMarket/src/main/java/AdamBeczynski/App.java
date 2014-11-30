@@ -1,33 +1,33 @@
 package AdamBeczynski;
 
-import java.util.ArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Hello world!
+ * Application entrance point
  *
  */
 public class App
 {
     public static void main( String[] args ) throws InterruptedException
     {
-        //System.out.println( "Hello World!" );
+        //ThreadPool for application
         ExecutorService auctionHouseExecutorService = Executors.newCachedThreadPool();
-        //ArrayList<Donor> donorsHelper = new ArrayList<Donor>();
-        //System.out.println("starting phase 1");
+        //Single Market Manager runnable object
         auctionHouseExecutorService.execute(AuctionHouse.marketManager);
-        //System.out.println("starting phase 2");
+        //Single Chairman runnable object
         auctionHouseExecutorService.execute(AuctionHouse.chairman);
-        //System.out.println("starting phase 3");
-        for(int i = 0; i < 12; i++)
+        //Many Donors runnable objects
+        for(int i = 0; i < 50; i++)
         {
             auctionHouseExecutorService.execute(new Donor("Donor " + i));
         }
-        //System.out.println("starting phase 4");
-        for(int i = 0; i < 1; i++)
+        //Many Recipient runnable objects
+        for(int i = 0; i < 20; i++)
         {
             auctionHouseExecutorService.execute(new Recipient("Recipient " + i));
         }
+        //Application finish after all threads finish.
+        auctionHouseExecutorService.shutdown();
     }
 }
